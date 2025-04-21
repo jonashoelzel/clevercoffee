@@ -175,7 +175,7 @@ void initScale() {
 void shottimerscale() {
     switch (shottimerCounter) {
         case 10: // waiting step for brew switch turning on
-            if (preinfusionPause == 0 || preinfusion == 0) {
+            if (preinfusionPause == 0 || preinfusion == 0 || brewSwitchState == kBrewSwitchFlushOff) {
                 if (timeBrewed > 0) {
                     weightPreBrew = weight;
                     shottimerCounter = 20;

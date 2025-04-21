@@ -131,6 +131,7 @@ void checkbrewswitch() {
                     LOG(DEBUG, "brewswitchTriggerCase = kBrewSwitchFlushOff: brew switch long press released - stop flushing");
                     valveRelay.off();
                     pumpRelay.off();
+                    timeBrewed = 0;
                 }
                 break;
 

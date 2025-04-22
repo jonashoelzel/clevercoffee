@@ -62,7 +62,12 @@ void printScreen() {
             u8g2.print(weightBrew, 0);
         }
         else {
-            u8g2.print(weight, 0);
+            if (weight < 0.5 && weight > -0.5) {
+                u8g2.print(0.0, 0);
+            }
+            else {
+                u8g2.print(weight, 0);
+            }
         }
 
         if (weightSetpoint > 0) {

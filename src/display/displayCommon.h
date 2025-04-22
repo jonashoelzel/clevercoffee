@@ -260,6 +260,9 @@ bool displayShottimer() {
         u8g2.print(weightBrew, 1);
         u8g2.print("g");
         u8g2.setFont(u8g2_font_profont11_tf);
+        u8g2.setCursor(64, 0);
+        u8g2.print(flowRate, 1);
+        u8g2.print("g/s");
 #else
         displayBrewtime(48, 25, timeBrewed);
 #endif

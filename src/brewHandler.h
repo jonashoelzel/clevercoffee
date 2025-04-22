@@ -8,6 +8,7 @@
 #pragma once
 
 #include <hardware/pinmapping.h>
+#include "pumpHandler.h"
 
 enum BrewSwitchState {
     kBrewSwitchIdle = 10,
@@ -60,11 +61,14 @@ boolean scaleTareOn = 0;
 int shottimerCounter = 10;
 float calibrationValue = SCALE_CALIBRATION_FACTOR; // use calibration example to get value
 float weight = 0;                                  // value from HX711
+float flowRate = 0;                                // flow rate of brew g/s
+float startOfPreinfusionWeight = 0;                // weight value of preinfusion
+int preinfusionFinishTime = 0;                     // time when preinfusion is finished
 float weightPreBrew = 0;                           // value of scale before wrew started
 float weightBrew = 0;                              // weight value of brew
 float scaleDelayValue = 2.5;                       // value in gramm that takes still flows onto the scale after brew is stopped
 bool scaleFailure = false;
-const unsigned long intervalWeight = 200;          // weight scale
+const unsigned long intervalWeight = 100;          // weight scale
 unsigned long previousMillisScale;                 // initialisation at the end of init()
 HX711_ADC LoadCell(PIN_HXDAT, PIN_HXCLK);
 
@@ -284,12 +288,21 @@ void brew() {
             LOG(INFO, "Preinfusion");
             valveRelay.on();
             pumpRelay.on();
+            startOfPreinfusionWeight = weight;
             currBrewState = kWaitPreinfusion;
 
             break;
 
+            // TODO: Add preinfusion ripple
+
         case kWaitPreinfusion: // waiting time preinfusion
-            if (timeBrewed > (preinfusion * 1000)) {
+            pumpHandler.setPower(20); // Set pump to 20% power during preinfusion
+            pumpHandler.update();
+
+            // Check if preinfusion time is reached OR first drip is detected (0.1g increase)
+            if ((timeBrewed > (preinfusion * 1000)) || 
+                (FEATURE_SCALE == 1 && (weight - startOfPreinfusionWeight) > 0.1f)) {
+                preinfusionFinishTime = timeBrewed;
                 currBrewState = kPreinfusionPause;
             }
 
@@ -298,13 +311,14 @@ void brew() {
         case kPreinfusionPause: // preinfusion pause
             LOG(INFO, "Preinfusion pause");
             valveRelay.on();
-            pumpRelay.off();
+            pumpHandler.setPower(0); // Set pump to 0% power during preinfusion pause
+            pumpHandler.update();
             currBrewState = kWaitPreinfusionPause;
 
             break;
 
         case kWaitPreinfusionPause: // waiting time preinfusion pause
-            if (timeBrewed > ((preinfusion * 1000) + (preinfusionPause * 1000))) {
+            if (timeBrewed > (preinfusionFinishTime + preinfusionPause * 1000)) {
                 currBrewState = kBrewRunning;
             }
 
@@ -313,13 +327,24 @@ void brew() {
         case kBrewRunning: // brew running
             LOG(INFO, "Brew started");
             valveRelay.on();
-            pumpRelay.on();
+#if (FEATURE_SCALE == 1)
+            pumpHandler.setPower(30); // Set pump to 30% power at start of main brew
+#else
+            pumpHandler.setPower(100); // Set pump to 100% power at start of main brew
+#endif
+            pumpHandler.update();
             currBrewState = kWaitBrew;
 
             break;
 
         case kWaitBrew: // waiting time or weight brew
             lastBrewTime = timeBrewed;
+
+            // Adjust pump power based on flow rate if scale is enabled
+#if (FEATURE_SCALE == 1)
+            pumpHandler.adjustPowerForFlowRate(flowRate);
+            pumpHandler.update();
+#endif
 
             // stop brew if target-time is reached --> No stop if stop by time is deactivated via Parameter (0)
             if ((timeBrewed > totalBrewTime) && ((brewTime > 0))) {
@@ -337,7 +362,8 @@ void brew() {
         case kBrewFinished: // brew finished
             LOG(INFO, "Brew stopped");
             valveRelay.off();
-            pumpRelay.off();
+            pumpHandler.setPower(0);
+            pumpHandler.update();
             currBrewState = kWaitBrewOff;
 
             break;

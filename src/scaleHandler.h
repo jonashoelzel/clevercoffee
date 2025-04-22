@@ -67,21 +67,24 @@ void checkWeight() {
 
     if (newDataReady) {
         if (currentMillisScale - previousMillisScale >= intervalWeight) {
-            previousMillisScale = currentMillisScale;
-            newDataReady = false;
+
+            float previousWeight = weight;
+
             w1 = LoadCell.getData();
 
 #if SCALE_TYPE == 0
             w2 = LoadCell2.getData();
-#endif
-        }
-    }
-
-#if SCALE_TYPE == 0
     weight = w1 + w2;
 #else
     weight = w1;
 #endif
+
+            flowRate = (weight - previousWeight) / (currentMillisScale - previousMillisScale) * 1000;
+
+            previousMillisScale = currentMillisScale;
+            newDataReady = false;
+        }
+    }
 
     if (scaleCalibrationOn) {
         scaleCalibrate(LoadCell, PIN_HXDAT, STO_ITEM_SCALE_CALIBRATION_FACTOR, &scaleCalibration);

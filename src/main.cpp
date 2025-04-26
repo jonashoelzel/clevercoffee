@@ -1677,7 +1677,7 @@ void setup() {
     }
 
     if (FEATURE_WATER_SENS == 1) {
-        waterSensor = new IOSwitch(PIN_WATERSENSOR, (WATER_SENS_TYPE == Switch::NORMALLY_OPEN ? GPIOPin::IN_PULLDOWN : GPIOPin::IN_PULLUP), Switch::TOGGLE, WATER_SENS_TYPE);
+        waterSensor = new IOSwitch(PIN_WATERSENSOR, (WATER_SENS_TYPE == Switch::NORMALLY_OPEN ? GPIOPin::IN_PULLDOWN : GPIOPin::IN_PULLUP), Switch::TOGGLE, WATER_SENS_TYPE, HIGH);
     }
 
 #if OLED_DISPLAY != 0

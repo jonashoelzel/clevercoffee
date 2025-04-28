@@ -461,6 +461,11 @@ void serverSetup() {
         request->send(response);
     });
 
+    server.on("/brewstatistics", HTTP_GET, [](AsyncWebServerRequest* request) {
+        String json = brewStatistics.toJson();
+        request->send(200, "application/json", json);
+    });
+
     server.onNotFound([](AsyncWebServerRequest* request) { request->send(404, "text/plain", "Not found"); });
 
     // set up event handler for temperature messages

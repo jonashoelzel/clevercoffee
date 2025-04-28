@@ -8,6 +8,7 @@
 #pragma once
 
 #include <hardware/pinmapping.h>
+#include "kalmanFilter.h"
 
 class PumpHandler {
 private:
@@ -20,6 +21,9 @@ private:
     static constexpr unsigned long CYCLE_TIME = 100;       // Total cycle time in ms
     static constexpr unsigned long MIN_PULSE_TIME = 10;    // Minimum pulse time in ms
     static constexpr unsigned long MAX_PULSE_TIME = CYCLE_TIME;   // Maximum pulse time in ms
+    
+    // Adjustment filtering
+    KalmanFilter powerAdjustFilter{0.05, 0.3}; // Increased measurement noise for more dampening
 
 public:
     /**
@@ -29,6 +33,8 @@ public:
     void setPower(uint8_t power) {
         if (power > 100) power = 100;
         pumpPower = power;
+
+        LOGF(INFO, "Pump power set to %d", pumpPower);
     }
 
     /**
@@ -39,22 +45,43 @@ public:
         return pumpPower;
     }
 
+    void resetFilter() {
+        powerAdjustFilter.reset();
+    }
+
     /**
      * @brief Adjust pump power based on flow rate
      * @param currentFlowRate Current flow rate in g/s
+     * @param targetFlowRate Target flow rate in g/s
      */
-    void adjustPowerForFlowRate(float currentFlowRate) {
-        if (currentFlowRate > MAX_FLOW_RATE) {
-            // Reduce power if flow rate is too high
-            uint8_t newPower = pumpPower - 5;
-            if (newPower < 10) newPower = 10; // Don't go below 10% power
-            setPower(newPower);
-        } else if (currentFlowRate < MAX_FLOW_RATE * 0.8f) {
-            // Increase power if flow rate is too low
-            uint8_t newPower = pumpPower + 5;
-            if (newPower > 100) newPower = 100; // Don't exceed 100% power
-            setPower(newPower);
+    void adjustPowerForFlowRate(float currentFlowRate, float targetFlowRate) {
+        // Calculate flow rate difference (negative if flow is too high)
+        float flowDelta = targetFlowRate - currentFlowRate;
+        
+        // Exit early if we're within acceptable range (within 20% below target)
+        if (flowDelta >= 0 && flowDelta <= 0.2f * targetFlowRate) {
+            return;
         }
+        
+        // Calculate raw power adjustment (1-10%)
+        static const float ADJUSTMENT_SCALE = 20.0f;
+        int rawAdjustment = constrain(
+            int(abs(flowDelta) * ADJUSTMENT_SCALE), 
+            1, 
+            10
+        );
+        
+        // Apply direction
+        if (flowDelta < 0) {
+            rawAdjustment = -rawAdjustment;
+        }
+        
+        // Run the raw adjustment through Kalman filter
+        float filteredAdjustment = powerAdjustFilter.update(rawAdjustment);
+        
+        // Apply the filtered adjustment
+        uint8_t newPower = constrain(pumpPower + round(filteredAdjustment), 10, 100);
+        setPower(newPower);
     }
 
     /**

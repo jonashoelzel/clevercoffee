@@ -203,7 +203,7 @@ void resetStandbyTimer(void);
 
 // system parameters
 uint8_t pidON = 0; // 1 = control loop in closed loop
-double brewSetpoint = SETPOINT;
+double brewSetpoint = SETPOINT; // temperature setpoint in degrees Celsius
 double brewTempOffset = TEMPOFFSET;
 double setpoint = brewSetpoint;
 double steamSetpoint = STEAMSETPOINT;
@@ -261,7 +261,7 @@ SysPara<double> sysParaBrewSetpoint(&brewSetpoint, BREW_SETPOINT_MIN, BREW_SETPO
 SysPara<double> sysParaTempOffset(&brewTempOffset, BREW_TEMP_OFFSET_MIN, BREW_TEMP_OFFSET_MAX, STO_ITEM_BREW_TEMP_OFFSET);
 SysPara<double> sysParaBrewPIDDelay(&brewPIDDelay, BREW_PID_DELAY_MIN, BREW_PID_DELAY_MAX, STO_ITEM_BREW_PID_DELAY);
 SysPara<uint8_t> sysParaUseBDPID(&useBDPID, 0, 1, STO_ITEM_USE_BD_PID);
-SysPara<double> sysParaBrewTime(&brewTime, BREW_TIME_MIN, BREW_TIME_MAX, STO_ITEM_BREW_TIME);
+SysPara<double> sysParaBrewTime(&brewTime, -BREW_TIME_MAX, BREW_TIME_MAX, STO_ITEM_BREW_TIME);
 SysPara<double> sysParaBrewSwTime(&brewtimesoftware, BREW_SW_TIME_MIN, BREW_SW_TIME_MAX, STO_ITEM_BREW_SW_TIME);
 SysPara<double> sysParaBrewThresh(&brewSensitivity, BD_THRESHOLD_MIN, BD_THRESHOLD_MAX, STO_ITEM_BD_THRESHOLD);
 SysPara<uint8_t> sysParaWifiCredentialsSaved(&wifiCredentialsSaved, 0, 1, STO_ITEM_WIFI_CREDENTIALS_SAVED);
@@ -323,6 +323,19 @@ double aggKd = aggTv * aggKp;
 
 PID bPID(&temperature, &pidOutput, &setpoint, aggKp, aggKi, aggKd, 1, DIRECT);
 
+enum BrewState {
+    kBrewIdle = 10,
+    kPreinfusion = 20,
+    kWaitPreinfusion = 21,
+    kPreinfusionPause = 30,
+    kWaitPreinfusionPause = 31,
+    kBrewRunning = 40,
+    kWaitBrew = 41,
+    kBrewFinished = 42,
+    kWaitBrewOff = 43
+};
+
+#include "brewStatistics.h"
 #include "brewHandler.h"
 
 Timer logbrew([&]() { LOGF(DEBUG, "(tB,T,hra) --> %5.2f %6.2f %8.2f", (double)(millis() - startingTime) / 1000, temperature, tempSensor->getAverageTemperatureRate()); }, 500);
@@ -1312,7 +1325,7 @@ void setup() {
                                  .section = sBrewSection,
                                  .position = 14,
                                  .show = [] { return true && FEATURE_BREWCONTROL == 1; },
-                                 .minValue = BREW_TIME_MIN,
+                                 .minValue = -BREW_TIME_MAX,
                                  .maxValue = BREW_TIME_MAX,
                                  .ptr = (void*)&brewTime};
 

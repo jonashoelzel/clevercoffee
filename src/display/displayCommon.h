@@ -252,17 +252,42 @@ bool displayShottimer() {
         }
 
 #if (FEATURE_SCALE == 1)
-        u8g2.setFont(u8g2_font_profont22_tf);
-        u8g2.setCursor(64, 15);
+        u8g2.setFont(u8g2_font_profont17_tf);
+        u8g2.setCursor(56, 0);
         u8g2.print(timeBrewed / 1000, 1);
         u8g2.print("s");
-        u8g2.setCursor(64, 38);
+        u8g2.setCursor(56, 16);
         u8g2.print(weightBrew, 1);
         u8g2.print("g");
-        u8g2.setFont(u8g2_font_profont11_tf);
-        u8g2.setCursor(64, 0);
+        u8g2.setCursor(56, 32);
         u8g2.print(flowRate, 1);
         u8g2.print("g/s");
+        u8g2.setCursor(56, 48);
+        u8g2.print((int)pumpHandler.getPower());
+        u8g2.print(" p");
+        u8g2.setFont(u8g2_font_profont11_tf);
+
+        u8g2.setCursor(1, 53);
+        switch (currBrewState) {
+            case kBrewRunning:
+            case kWaitBrew:
+                u8g2.print("Brew");
+                break;
+            case kPreinfusion:
+            case kPreinfusionPause:
+                u8g2.print("Preinf.");
+                break;
+            case kWaitPreinfusion:
+            case kWaitPreinfusionPause:
+                u8g2.print("Preinf.");
+                break;
+            case kBrewFinished:
+                u8g2.print("Done");
+                break;
+            case kWaitBrewOff:
+                u8g2.print("Off");
+                break;
+        }
 #else
         displayBrewtime(48, 25, timeBrewed);
 #endif
@@ -281,13 +306,20 @@ bool displayShottimer() {
         u8g2.drawXBMP(-1, 11, Brew_Cup_Logo_width, Brew_Cup_Logo_height, Brew_Cup_Logo);
 
 #if (FEATURE_SCALE == 1)
-        u8g2.setFont(u8g2_font_profont22_tf);
-        u8g2.setCursor(64, 15);
+        u8g2.setFont(u8g2_font_profont17_tf);
+        u8g2.setCursor(64, 0);
         u8g2.print(lastBrewTime / 1000, 1);
         u8g2.print("s");
-        u8g2.setCursor(64, 38);
+        u8g2.setCursor(64, 16);
         u8g2.print(weightBrew, 1);
         u8g2.print("g");
+        u8g2.setCursor(64, 32);
+        u8g2.print(brewStatistics.getAverageFlowRate(), 1);
+        u8g2.print("g/s");
+        u8g2.setCursor(64, 48);
+        u8g2.print((int)brewStatistics.getAveragePower());
+        u8g2.print(" p");
+
         u8g2.setFont(u8g2_font_profont11_tf);
 #else
         displayBrewtime(48, 25, lastBrewTime);
@@ -326,7 +358,8 @@ bool displayMachineState() {
         u8g2.drawXBMP(38, 0, Off_Logo_width, Off_Logo_height, Off_Logo);
         u8g2.setCursor(0, 55);
         u8g2.setFont(u8g2_font_profont10_tf);
-        u8g2.print("PID is disabled manually");
+        // u8g2.print("PID is disabled manually");
+        u8g2.print(".");
         displayWaterIcon(119, 1);
         u8g2.sendBuffer();
         return true;

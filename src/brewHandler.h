@@ -18,18 +18,6 @@ enum BrewSwitchState {
     kBrewSwitchReset = 40
 };
 
-enum BrewState {
-    kBrewIdle = 10,
-    kPreinfusion = 20,
-    kWaitPreinfusion = 21,
-    kPreinfusionPause = 30,
-    kWaitPreinfusionPause = 31,
-    kBrewRunning = 40,
-    kWaitBrew = 41,
-    kBrewFinished = 42,
-    kWaitBrewOff = 43
-};
-
 enum BackflushState {
     kBackflushWaitBrewswitchOn = 10,
     kBackflushFillingStart = 20,
@@ -48,7 +36,7 @@ int brewSwitchState = kBrewSwitchIdle;
 boolean brewSwitchWasOff = false;
 
 double totalBrewTime = 0;        // total brewtime set in software
-double timeBrewed = 0;           // total brewed time
+unsigned long timeBrewed = 0;           // total brewed time
 double lastBrewTimeMillis = 0;   // for shottimer delay after disarmed button
 double lastBrewTime = 0;
 unsigned long startingTime = 0;  // start time of brew
@@ -62,6 +50,7 @@ int shottimerCounter = 10;
 float calibrationValue = SCALE_CALIBRATION_FACTOR; // use calibration example to get value
 float weight = 0;                                  // value from HX711
 float flowRate = 0;                                // flow rate of brew g/s
+float targetFlowRate = 0;                          // target flow rate of brew g/s
 float startOfPreinfusionWeight = 0;                // weight value of preinfusion
 int preinfusionFinishTime = 0;                     // time when preinfusion is finished
 float weightPreBrew = 0;                           // value of scale before wrew started
@@ -248,7 +237,7 @@ void brew() {
         currBrewState = kWaitBrewOff;
     }
 
-    if (currBrewState > kBrewIdle && currBrewState < kWaitBrewOff || brewSwitchState == kBrewSwitchFlushOff) {
+    if (currBrewState > kBrewIdle && currBrewState < kBrewFinished || brewSwitchState == kBrewSwitchFlushOff) {
         timeBrewed = currentMillisTemp - startingTime;
     }
 
@@ -257,12 +246,20 @@ void brew() {
         brewSwitchWasOff = true;
     }
 
-    if (brewTime > 0) {
-        totalBrewTime = (preinfusion * 1000) + (preinfusionPause * 1000) + (brewTime * 1000); // running every cycle, in case changes are done during brew
-    }
-    else {
+    if (brewTime != 0) {
+        totalBrewTime = (preinfusion * 1000) + (preinfusionPause * 1000) + (abs(brewTime) * 1000); // running every cycle, in case changes are done during brew
+    } else {
         // Stop by time deactivated --> brewTime = 0
         totalBrewTime = 0;
+    }
+
+    if (currBrewState != kBrewIdle) {
+        // Update brew statistics every 50ms
+        static unsigned long lastBrewStatsUpdate = 0;
+        if (millis() - lastBrewStatsUpdate >= 1000 / BREW_STATISTICS_HISTORY_FREQUENCY) {
+            brewStatistics.update(currBrewState, temperature, flowRate, weightBrew, pumpHandler.getPower());
+            lastBrewStatsUpdate = millis();
+        }
     }
 
     // state machine for brew
@@ -271,12 +268,15 @@ void brew() {
             if (currStateBrewSwitch == HIGH && backflushState == 10 && backflushOn == 0 && brewSwitchWasOff && machineState != kWaterEmpty) {
                 startingTime = millis();
 
-                if (preinfusionPause == 0 || preinfusion == 0) {
+                if (preinfusionPause == 0 && preinfusion == 0) {
                     currBrewState = kBrewRunning;
                 }
                 else {
                     currBrewState = kPreinfusion;
                 }
+
+                // Initialize brew statistics
+                brewStatistics.initNewBrew(brewSetpoint, weightSetpoint, preinfusion, preinfusionPause, brewTime * 1000);
             }
             else {
                 backflush();
@@ -287,7 +287,8 @@ void brew() {
         case kPreinfusion: // preinfusioon
             LOG(INFO, "Preinfusion");
             valveRelay.on();
-            pumpRelay.on();
+            pumpHandler.setPower(10); // Set pump to 10% power during preinfusion
+            pumpHandler.update();
             startOfPreinfusionWeight = weight;
             currBrewState = kWaitPreinfusion;
 
@@ -296,14 +297,33 @@ void brew() {
             // TODO: Add preinfusion ripple
 
         case kWaitPreinfusion: // waiting time preinfusion
-            pumpHandler.setPower(20); // Set pump to 20% power during preinfusion
+            static int dripFilterCount = 0;
+
+            // increase pumpHandler power by 3.64% every 100ms
+            if (timeBrewed % 100 == 0) {
+                pumpHandler.setPower(ceil(1.0364 * pumpHandler.getPower()));
+            }
+
             pumpHandler.update();
 
-            // Check if preinfusion time is reached OR first drip is detected (0.1g increase)
-            if ((timeBrewed > (preinfusion * 1000)) || 
-                (FEATURE_SCALE == 1 && (weight - startOfPreinfusionWeight) > 0.1f)) {
-                preinfusionFinishTime = timeBrewed;
-                currBrewState = kPreinfusionPause;
+            // Check if preinfusion time is reached OR first drip is detected (0.3g increase after 1.5s)
+            if (timeBrewed < 1500) {
+                startOfPreinfusionWeight = weight;
+            }
+            else if ((timeBrewed > (preinfusion * 1000)) ||
+                (FEATURE_SCALE == 1 && (weight - startOfPreinfusionWeight) > 0.3f)) {
+                
+                // Count drip filter every 30ms => 30ms * 5 = 150ms
+                if (timeBrewed % 30 == 0) {
+                    dripFilterCount++;
+                }
+
+                if (dripFilterCount > 5) {
+                    preinfusionFinishTime = timeBrewed;
+                    currBrewState = kPreinfusionPause;                    
+                }
+            } else {
+                dripFilterCount = 0;
             }
 
             break;
@@ -311,7 +331,9 @@ void brew() {
         case kPreinfusionPause: // preinfusion pause
             LOG(INFO, "Preinfusion pause");
             valveRelay.on();
-            pumpHandler.setPower(0); // Set pump to 0% power during preinfusion pause
+            if (preinfusionPause > 0) {
+                pumpHandler.setPower(0); // Set pump to 0% power during preinfusion pause
+            }
             pumpHandler.update();
             currBrewState = kWaitPreinfusionPause;
 
@@ -328,7 +350,11 @@ void brew() {
             LOG(INFO, "Brew started");
             valveRelay.on();
 #if (FEATURE_SCALE == 1)
-            pumpHandler.setPower(30); // Set pump to 30% power at start of main brew
+            // if no preinfusion pause, keep pump power as it was during preinfusion ramp.
+            // otherwise, set pump to 60% power at start of main brew
+            if (preinfusionPause > 0) {
+                pumpHandler.setPower(60); // Set pump to 60% power at start of main brew
+            }
 #else
             pumpHandler.setPower(100); // Set pump to 100% power at start of main brew
 #endif
@@ -342,7 +368,18 @@ void brew() {
 
             // Adjust pump power based on flow rate if scale is enabled
 #if (FEATURE_SCALE == 1)
-            pumpHandler.adjustPowerForFlowRate(flowRate);
+            if ((totalBrewTime - timeBrewed) <= 0) {
+                targetFlowRate = weightSetpoint - weightBrew;
+            }
+            else {
+                targetFlowRate = (weightSetpoint - weightBrew) / ((totalBrewTime - timeBrewed) / 1000);
+            }
+
+            // Adjust pump power every 50ms
+            if (timeBrewed % 50 == 0) {
+                pumpHandler.adjustPowerForFlowRate(flowRate, targetFlowRate);
+            }
+
             pumpHandler.update();
 #endif
 
@@ -352,7 +389,7 @@ void brew() {
             }
 #if (FEATURE_SCALE == 1)
             // stop brew if target-weight is reached --> No stop if stop by weight is deactivated via Parameter (0)
-            else if (((FEATURE_SCALE == 1) && (weightBrew > weightSetpoint)) && (weightSetpoint > 0)) {
+            else if (((FEATURE_SCALE == 1) && (weightBrew > weightSetpoint - flowRate * 0.5)) && (weightSetpoint > 0)) {
                 currBrewState = kBrewFinished;
             }
 #endif
@@ -360,11 +397,20 @@ void brew() {
             break;
 
         case kBrewFinished: // brew finished
-            LOG(INFO, "Brew stopped");
-            valveRelay.off();
-            pumpHandler.setPower(0);
-            pumpHandler.update();
-            currBrewState = kWaitBrewOff;
+            static unsigned long brewFinishTime = 0;
+            if (brewFinishTime == 0) {
+                brewFinishTime = millis();
+
+                LOG(INFO, "Brew stopped");
+                valveRelay.off();
+                pumpHandler.setPower(0);
+                pumpHandler.update();
+                pumpHandler.resetFilter();
+            }
+            else if (millis() - brewFinishTime >= 500) { // wait 500ms after brew finished to settle scale
+                currBrewState = kWaitBrewOff;
+                brewFinishTime = 0;
+            }
 
             break;
 
@@ -379,6 +425,8 @@ void brew() {
                 currBrewState = kBrewIdle;
                 lastBrewTime = timeBrewed; // store brewtime to show in Shottimer after brew is finished
                 timeBrewed = 0;
+
+                brewStatistics.logStatisticsAsJson();
             }
 
             break;

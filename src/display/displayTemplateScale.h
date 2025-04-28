@@ -90,15 +90,24 @@ void printScreen() {
         u8g2.print(brewtimesoftware, 0);
     }
     else {
-        if (brewTime > 0) {
+        if (brewTime != 0) {
             u8g2.print("/");
-            u8g2.print(totalBrewTime / 1000, 0);
+            u8g2.print(abs(totalBrewTime) / 1000, 0);
         }
 
         u8g2.print(" (");
         u8g2.print(lastBrewTime / 1000, 1);
         u8g2.print(")");
     }
+
+    u8g2.setCursor(32, 46);
+    u8g2.print("P: ");
+    u8g2.print(brewStatistics.getAveragePower(), 1);
+    u8g2.print("|");
+    u8g2.print("F:");
+    u8g2.print(brewStatistics.getAverageFlowRate(), 1);
+    u8g2.print("g/s");
+
 
 #if (FEATURE_PRESSURESENSOR == 1)
     u8g2.setCursor(32, 46);

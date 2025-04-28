@@ -8,6 +8,8 @@
 
 #if FEATURE_SCALE == 1
 
+#include "kalmanFilter.h"
+
 void scaleCalibrate(HX711_ADC loadCell, int pin, sto_item_id_t name, float* calibration) {
     loadCell.setCalFactor(1.0);
     u8g2.clearBuffer();
@@ -47,6 +49,9 @@ void scaleCalibrate(HX711_ADC loadCell, int pin, sto_item_id_t name, float* cali
 float w1 = 0.0;
 float w2 = 0.0;
 
+// Create an instance of KalmanFilter for weight measurements
+KalmanFilter flowRateFilter;
+
 /**
  * @brief Check measured weight
  */
@@ -74,12 +79,13 @@ void checkWeight() {
 
 #if SCALE_TYPE == 0
             w2 = LoadCell2.getData();
-    weight = w1 + w2;
+            weight = w1 + w2;
 #else
-    weight = w1;
+            weight = w1;
 #endif
 
-            flowRate = (weight - previousWeight) / (currentMillisScale - previousMillisScale) * 1000;
+            // Apply Kalman filter to flow rate
+            flowRate = flowRateFilter.update((weight - previousWeight) / (currentMillisScale - previousMillisScale) * 1000);
 
             previousMillisScale = currentMillisScale;
             newDataReady = false;
@@ -178,14 +184,14 @@ void initScale() {
 void shottimerscale() {
     switch (shottimerCounter) {
         case 10: // waiting step for brew switch turning on
-            if (preinfusionPause == 0 || preinfusion == 0 || brewSwitchState == kBrewSwitchFlushOff) {
+            if ((preinfusionPause == 0 && preinfusion == 0) || brewSwitchState == kBrewSwitchFlushOff) {
                 if (timeBrewed > 0) {
                     weightPreBrew = weight;
                     shottimerCounter = 20;
                 }
             }
             else {
-                if (timeBrewed > preinfusion * 1000) {
+                if (currBrewState == kPreinfusionPause) {
                     weightPreBrew = weight;
                     shottimerCounter = 20;
                 }

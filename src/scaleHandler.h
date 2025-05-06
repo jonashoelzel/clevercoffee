@@ -50,7 +50,7 @@ float w1 = 0.0;
 float w2 = 0.0;
 
 // Create an instance of KalmanFilter for weight measurements
-KalmanFilter flowRateFilter;
+KalmanFilter flowRateFilter{0.05, 0.2};
 
 /**
  * @brief Check measured weight

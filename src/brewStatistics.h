@@ -14,6 +14,7 @@ struct BrewStatisticItem {
 
 class BrewStatistics {
 private:
+    unsigned long id;
     float setTemperature; // in degrees Celsius
     float setWeight; // in grams
     float setPreinfusion; // time in milliseconds
@@ -34,6 +35,9 @@ public:
         setPreinfusionPause = preinfusionPause;
         setBrewTime = brewTime;
         length = 0;
+
+        useRealRandomGenerator(true);
+        id = random(0, ULONG_MAX);
     }
     
     void update(BrewState brewState, float temperature, float flowRate, float weight, uint8_t power) {
@@ -81,6 +85,7 @@ public:
         if (length == 0) return "{}";
 
         String json = "{";
+        json += "\"id\":" + String(id) + ",";
         json += "\"setTemp\":" + String(setTemperature) + ",";
         json += "\"setWeight\":" + String(setWeight) + ",";
         json += "\"setPreinf\":" + String(setPreinfusion) + ",";

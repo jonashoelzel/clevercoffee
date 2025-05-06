@@ -20,8 +20,8 @@ private:
 public:
     /**
      * @brief Constructor for KalmanFilter
-     * @param pNoise Process noise covariance
-     * @param mNoise Measurement noise covariance
+     * @param pNoise Process noise covariance -> increase for more dampening
+     * @param mNoise Measurement noise covariance -> increase for more dampening
      */
     KalmanFilter(float pNoise = 0.08, float mNoise = 0.05) 
         : filteredValue(0.0), 

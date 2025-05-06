@@ -21,9 +21,13 @@ private:
     static constexpr unsigned long CYCLE_TIME = 100;       // Total cycle time in ms
     static constexpr unsigned long MIN_PULSE_TIME = 10;    // Minimum pulse time in ms
     static constexpr unsigned long MAX_PULSE_TIME = CYCLE_TIME;   // Maximum pulse time in ms
-    
+
     // Adjustment filtering
-    KalmanFilter powerAdjustFilter{0.05, 0.3}; // Increased measurement noise for more dampening
+    KalmanFilter powerAdjustFilter{0.05, 0.4}; // Increased measurement noise for more dampening
+    KalmanFilter flowRateDeltaFilter{0.05, 0.9}; // Increased measurement noise for more dampening
+    KalmanFilter flowRateFilter{0.05, 0.9}; // Increased measurement noise for more dampening
+
+    float walkingAverageFlowRate = 0.0f;
 
 public:
     /**
@@ -47,6 +51,9 @@ public:
 
     void resetFilter() {
         powerAdjustFilter.reset();
+        flowRateDeltaFilter.reset();
+        flowRateFilter.reset();
+        walkingAverageFlowRate = 0.0f;
     }
 
     /**
@@ -56,23 +63,24 @@ public:
      */
     void adjustPowerForFlowRate(float currentFlowRate, float targetFlowRate) {
         // Calculate flow rate difference (negative if flow is too high)
-        float flowDelta = targetFlowRate - currentFlowRate;
+        walkingAverageFlowRate = (walkingAverageFlowRate * 0.9f) + (currentFlowRate * 0.1f);
+        float flowRateDelta = targetFlowRate - walkingAverageFlowRate;
         
         // Exit early if we're within acceptable range (within 20% below target)
-        if (flowDelta >= 0 && flowDelta <= 0.2f * targetFlowRate) {
+        if (flowRateDelta >= 0 && flowRateDelta <= 0.2f * targetFlowRate) {
             return;
         }
-        
+
         // Calculate raw power adjustment (1-10%)
-        static const float ADJUSTMENT_SCALE = 20.0f;
+        static const float ADJUSTMENT_SCALE = 2.0f;
         int rawAdjustment = constrain(
-            int(abs(flowDelta) * ADJUSTMENT_SCALE), 
-            1, 
+            int(abs(flowRateDelta) * ADJUSTMENT_SCALE), 
+            1,
             10
         );
-        
+
         // Apply direction
-        if (flowDelta < 0) {
+        if (flowRateDelta < 0) {
             rawAdjustment = -rawAdjustment;
         }
         
@@ -80,7 +88,7 @@ public:
         float filteredAdjustment = powerAdjustFilter.update(rawAdjustment);
         
         // Apply the filtered adjustment
-        uint8_t newPower = constrain(pumpPower + round(filteredAdjustment), 10, 100);
+        uint8_t newPower = constrain(pumpPower + round(rawAdjustment), 10, 100);
         setPower(newPower);
     }
 
